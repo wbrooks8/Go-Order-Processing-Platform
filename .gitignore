@@ -1,0 +1,38 @@
+.DS_Store
+.idea/
+.vscode/*.log
+*/.vscode
+
+# Go build output and coverage
+bin/
+build/
+dist/
+*.exe
+*.exe~
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go tooling and local dependency caches
+vendor/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Docker and database data
+postgres_data/
+*.sql.gz
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# Generated documentation or editor artifacts
+*.swp
+*.swo
+*~
