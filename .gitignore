@@ -1,6 +1,6 @@
 .DS_Store
 .idea/
-.vscode/*.log
+.vscode
 */.vscode
 
 # Go build output and coverage
