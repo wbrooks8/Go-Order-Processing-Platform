@@ -1,3 +1,7 @@
+// Defines how orders and items are stored in PostgreSQL, including table
+// names, column types, keys, and their relationship. GORM uses these structs
+// and tags when creating tables and reading or writing records.
+
 package postgres
 
 import "github.com/wbrooks8/go_order_api_gateway/internal/domain"

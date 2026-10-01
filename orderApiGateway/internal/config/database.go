@@ -1,3 +1,6 @@
+// Opens and closes the PostgreSQL connection. Reads DATABASE_DSN from the
+// environment, with a local development connection string as the fallback.
+
 package config
 
 import (

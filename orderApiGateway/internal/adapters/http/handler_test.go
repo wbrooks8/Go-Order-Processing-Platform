@@ -1,7 +1,12 @@
+// Sends simulated HTTP requests through the router and checks response
+// statuses and JSON bodies. Uses the real service with a fake repository,
+// so no running HTTP server or PostgreSQL database is required.
+
 package http
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -18,8 +23,7 @@ type fakeOrderRepository struct {
 	createErr    error
 	getOrder     *domain.Order
 	getErr       error
-	cancelOrder  *domain.Order
-	cancelErr    error
+	updateErr    error
 }
 
 func (fake *fakeOrderRepository) CreateOrder(_ context.Context, order *domain.Order) error {
@@ -34,8 +38,8 @@ func (fake *fakeOrderRepository) GetOrderByID(_ context.Context, _ string) (*dom
 	return fake.getOrder, fake.getErr
 }
 
-func (fake *fakeOrderRepository) CancelOrder(_ context.Context, _ string) (*domain.Order, error) {
-	return fake.cancelOrder, fake.cancelErr
+func (fake *fakeOrderRepository) UpdateOrder(_ context.Context, _ *domain.Order) error {
+	return fake.updateErr
 }
 
 func newTestRouter(repository *fakeOrderRepository) *gin.Engine {
@@ -73,16 +77,55 @@ func TestCreateOrderReturnsAcceptedAndMappedOrder(t *testing.T) {
 	}
 }
 
-func TestCreateOrderRejectsInvalidJSON(t *testing.T) {
-	router := newTestRouter(&fakeOrderRepository{})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/orders", strings.NewReader(`{"customerId":"customer-1","items":[]}`))
+func TestCreateOrderRejectsInvalidRequests(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*CreateOrderRequest)
+	}{
+		{"missing customer", func(r *CreateOrderRequest) { r.CustomerID = "" }},
+		{"nil items", func(r *CreateOrderRequest) { r.Items = nil }},
+		{"empty items", func(r *CreateOrderRequest) { r.Items = []CreateOrderItemRequest{} }},
+		{"missing product", func(r *CreateOrderRequest) { r.Items[0].ProductID = "" }},
+		{"zero quantity", func(r *CreateOrderRequest) { r.Items[0].Quantity = 0 }},
+		{"negative quantity", func(r *CreateOrderRequest) { r.Items[0].Quantity = -1 }},
+		{"zero price", func(r *CreateOrderRequest) { r.Items[0].UnitPrice = 0 }},
+		{"negative price", func(r *CreateOrderRequest) { r.Items[0].UnitPrice = -1 }},
+		{"invalid second item", func(r *CreateOrderRequest) {
+			item := r.Items[0]
+			item.Quantity = 0
+			r.Items = append(r.Items, item)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var input CreateOrderRequest
+			if err := json.Unmarshal([]byte(validCreateOrderJSON), &input); err != nil {
+				t.Fatal(err)
+			}
+			test.change(&input)
+			body, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertCreateRejected(t, string(body))
+		})
+	}
+	t.Run("malformed JSON", func(t *testing.T) { assertCreateRejected(t, `{"customerId":`) })
+}
+
+func assertCreateRejected(t *testing.T, body string) {
+	t.Helper()
+	repository := &fakeOrderRepository{}
+	router := newTestRouter(repository)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/orders", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-
 	router.ServeHTTP(response, request)
-
 	if response.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+		t.Errorf("status = %d, want 400; body: %s", response.Code, response.Body.String())
+	}
+	if repository.createdOrder != nil {
+		t.Error("invalid request reached the repository")
 	}
 }
 
@@ -148,18 +191,21 @@ func TestCancelOrderMapsSuccessNotFoundConflictAndInternalErrors(t *testing.T) {
 		name       string
 		order      *domain.Order
 		err        error
+		updateErr  error
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "cancelled", order: testOrderWithStatus("CANCELLED"), wantStatus: http.StatusOK, wantBody: `"status":"CANCELLED"`},
+		{name: "accepted", order: testOrderWithStatus("Accepted"), wantStatus: http.StatusOK, wantBody: `"status":"Cancelled"`},
+		{name: "Cancelled", order: testOrderWithStatus("Cancelled"), wantStatus: http.StatusOK, wantBody: `"status":"Cancelled"`},
 		{name: "not found", err: domain.ErrOrderNotFound, wantStatus: http.StatusNotFound, wantBody: `"message":"Order not found."`},
-		{name: "cannot cancel", err: domain.ErrOrderCannotBeCancelled, wantStatus: http.StatusConflict, wantBody: `"message":"Order cannot be cancelled in its current state."`},
+		{name: "cannot cancel", order: testOrderWithStatus("Paid"), wantStatus: http.StatusConflict, wantBody: `"message":"Order cannot be cancelled in its current state."`},
 		{name: "repository failure", err: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantBody: `"message":"Could not cancel order."`},
+		{name: "saving fails", order: testOrderWithStatus("Accepted"), updateErr: errors.New("save failed"), wantStatus: http.StatusInternalServerError, wantBody: `"message":"Could not cancel order."`},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			router := newTestRouter(&fakeOrderRepository{cancelOrder: test.order, cancelErr: test.err})
+			router := newTestRouter(&fakeOrderRepository{getOrder: test.order, getErr: test.err, updateErr: test.updateErr})
 			response := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/orders/order-1/cancel", nil)
 

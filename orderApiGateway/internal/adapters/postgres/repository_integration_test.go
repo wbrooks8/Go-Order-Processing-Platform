@@ -1,9 +1,14 @@
+// Tests creating, loading, and updating orders against a real PostgreSQL
+// database, including updates to missing orders. Requires TEST_DATABASE_DSN;
+// these tests skip when it is unset and clean up the orders they create.
+
 package postgres
 
 import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/wbrooks8/go_order_api_gateway/internal/domain"
@@ -11,10 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRepositoryIntegrationCreateGetAndCancel(t *testing.T) {
+func TestRepositoryIntegrationCreateGetAndUpdate(t *testing.T) {
 	repository, db := newIntegrationRepository(t)
 	ctx := context.Background()
-	wantOrder := integrationOrder("Accepted")
+	wantOrder := integrationOrder("Accepted", t)
 
 	if err := repository.CreateOrder(ctx, wantOrder); err != nil {
 		t.Fatalf("CreateOrder returned error: %v", err)
@@ -40,28 +45,21 @@ func TestRepositoryIntegrationCreateGetAndCancel(t *testing.T) {
 		t.Fatalf("retrieved items = %+v, want one SKU-INTEGRATION item", gotOrder.Items)
 	}
 
-	cancelledOrder, err := repository.CancelOrder(ctx, wantOrder.ID)
+	gotOrder.Status = "Paid"
+	gotOrder.TotalAmount = 0
+	gotOrder.ShippingAddress.City = "Dallas"
+	if err := repository.UpdateOrder(ctx, gotOrder); err != nil {
+		t.Fatalf("UpdateOrder returned error: %v", err)
+	}
+	retrieved, err := repository.GetOrderByID(ctx, wantOrder.ID)
 	if err != nil {
-		t.Fatalf("CancelOrder returned error: %v", err)
+		t.Fatalf("GetOrderByID after update: %v", err)
 	}
-	if cancelledOrder.Status != "CANCELLED" {
-		t.Fatalf("cancelled status = %q, want CANCELLED", cancelledOrder.Status)
+	if !reflect.DeepEqual(retrieved, gotOrder) {
+		t.Fatalf("persisted order = %+v, want %+v", retrieved, gotOrder)
 	}
-
-	retrievedAfterCancel, err := repository.GetOrderByID(ctx, wantOrder.ID)
-	if err != nil {
-		t.Fatalf("GetOrderByID after cancellation returned error: %v", err)
-	}
-	if retrievedAfterCancel.Status != "CANCELLED" {
-		t.Fatalf("persisted status = %q, want CANCELLED", retrievedAfterCancel.Status)
-	}
-
-	repeatedCancel, err := repository.CancelOrder(ctx, wantOrder.ID)
-	if err != nil {
-		t.Fatalf("repeated CancelOrder returned error: %v", err)
-	}
-	if repeatedCancel.Status != "CANCELLED" {
-		t.Fatalf("repeated cancel status = %q, want CANCELLED", repeatedCancel.Status)
+	if err := repository.UpdateOrder(ctx, gotOrder); err != nil {
+		t.Fatalf("unchanged update returned error: %v", err)
 	}
 
 	_, err = repository.GetOrderByID(ctx, "00000000-0000-0000-0000-000000000000")
@@ -70,29 +68,23 @@ func TestRepositoryIntegrationCreateGetAndCancel(t *testing.T) {
 	}
 }
 
-func TestRepositoryIntegrationRejectsCancellationForPaidOrder(t *testing.T) {
+func TestRepositoryIntegrationUpdateMissingOrder(t *testing.T) {
 	repository, db := newIntegrationRepository(t)
 	ctx := context.Background()
-	order := integrationOrder("PAID")
-
+	order := integrationOrder("Accepted", t)
+	// Generate a unique ID, then delete the order so this test owns the missing ID.
 	if err := repository.CreateOrder(ctx, order); err != nil {
-		t.Fatalf("CreateOrder returned error: %v", err)
+		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		db.Where("id = ?", order.ID).Delete(&OrderModel{})
-	})
-
-	_, err := repository.CancelOrder(ctx, order.ID)
-	if !errors.Is(err, domain.ErrOrderCannotBeCancelled) {
-		t.Fatalf("CancelOrder error = %v, want ErrOrderCannotBeCancelled", err)
+	t.Cleanup(func() { db.Where("id = ?", order.ID).Delete(&OrderModel{}) })
+	if err := db.Where("id = ?", order.ID).Delete(&OrderModel{}).Error; err != nil {
+		t.Fatal(err)
 	}
-
-	unchanged, err := repository.GetOrderByID(ctx, order.ID)
-	if err != nil {
-		t.Fatalf("GetOrderByID returned error: %v", err)
+	if err := repository.UpdateOrder(ctx, order); !errors.Is(err, domain.ErrOrderNotFound) {
+		t.Fatalf("UpdateOrder error = %v, want ErrOrderNotFound", err)
 	}
-	if unchanged.Status != "PAID" {
-		t.Fatalf("persisted status = %q, want PAID", unchanged.Status)
+	if _, err := repository.GetOrderByID(ctx, order.ID); !errors.Is(err, domain.ErrOrderNotFound) {
+		t.Fatalf("order must remain missing, got error %v", err)
 	}
 }
 
@@ -127,8 +119,9 @@ func newIntegrationRepository(t *testing.T) (*Repository, *gorm.DB) {
 	return repository, db
 }
 
-func integrationOrder(status string) *domain.Order {
-	order := domain.NewOrder(
+func integrationOrder(status string, t *testing.T) *domain.Order {
+	t.Helper()
+	order, err := domain.NewOrder(
 		"d8f3b2a1-0000-4a8a-8e2b-123456789abc",
 		[]domain.OrderItem{{
 			ProductID: "a1b2c3d4-e5f6-7a8b-9c0d-112233445566",
@@ -139,6 +132,10 @@ func integrationOrder(status string) *domain.Order {
 		domain.Address{Street: "1 Test Street", City: "Austin", State: "TX", PostalCode: "78701", Country: "USA"},
 		domain.Address{Street: "2 Test Street", City: "Austin", State: "TX", PostalCode: "78702", Country: "USA"},
 	)
+
+	if err != nil {
+		t.Fatalf("New order not created %v.", err)
+	}
 	order.Status = status
 	return order
 }

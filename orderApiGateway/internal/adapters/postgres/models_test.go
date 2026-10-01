@@ -1,3 +1,6 @@
+// Checks that converting between database models and domain orders preserves
+// order fields, addresses, and items. These tests do not connect to PostgreSQL.
+
 package postgres
 
 import (
@@ -39,7 +42,7 @@ func TestOrderModelConversionRoundTrip(t *testing.T) {
 
 func TestOrderFromModelCopiesAllFields(t *testing.T) {
 	model := OrderModel{
-		ID: "order-1", CustomerID: "customer-1", Status: "CANCELLED", TotalAmount: 42.5,
+		ID: "order-1", CustomerID: "customer-1", Status: "Cancelled", TotalAmount: 42.5,
 		Currency: "USD", Version: 2,
 		ShippingAddress: domain.Address{Street: "1 First St", City: "Austin", State: "TX", PostalCode: "78701", Country: "USA"},
 		BillingAddress:  domain.Address{Street: "2 Second St", City: "Austin", State: "TX", PostalCode: "78702", Country: "USA"},

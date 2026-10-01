@@ -1,3 +1,6 @@
+// Starts the application: connects to PostgreSQL, prepares the tables, and
+// connects the repository, service, and HTTP handlers before starting the server.
+
 package main
 
 import (

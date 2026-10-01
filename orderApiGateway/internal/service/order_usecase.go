@@ -1,3 +1,7 @@
+// Coordinates order operations for the HTTP handlers. For cancellation, it
+// loads the order, asks the order to cancel itself, and saves the change.
+// It returns an error immediately if any step fails.
+
 package service
 
 import (
@@ -16,6 +20,10 @@ func NewOrderUseCase(orders ports.OrderRepository) *OrderUseCase {
 }
 
 func (u *OrderUseCase) CreateOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+	if err := order.IsValidOrder(); err != nil {
+		return nil, err
+	}
+
 	if err := u.orders.CreateOrder(ctx, order); err != nil {
 		return nil, err
 	}
@@ -28,5 +36,15 @@ func (u *OrderUseCase) GetOrderByID(ctx context.Context, id string) (*domain.Ord
 }
 
 func (u *OrderUseCase) CancelOrder(ctx context.Context, id string) (*domain.Order, error) {
-	return u.orders.CancelOrder(ctx, id)
+	order, err := u.orders.GetOrderByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := order.Cancel(); err != nil {
+		return nil, err
+	}
+	if err := u.orders.UpdateOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	return order, nil
 }

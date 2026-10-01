@@ -45,7 +45,7 @@ type OrderItemResponse struct {
 	UnitPrice float64 `json:"unitPrice"`
 }
 
-func (request CreateOrderRequest) toDomain() *domain.Order {
+func (request CreateOrderRequest) toDomain() (*domain.Order, error) {
 	items := make([]domain.OrderItem, 0, len(request.Items))
 	for _, item := range request.Items {
 		items = append(items, domain.OrderItem{

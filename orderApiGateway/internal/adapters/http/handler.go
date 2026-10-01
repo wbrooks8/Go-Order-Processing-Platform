@@ -1,3 +1,6 @@
+// Reads HTTP requests, calls the order service, and sends JSON responses.
+// It translates service errors into HTTP statuses such as 404 or 409.
+
 package http
 
 import (
@@ -24,7 +27,15 @@ func (h *Handler) createOrder(context *gin.Context) {
 		return
 	}
 
-	order, err := h.orders.CreateOrder(context.Request.Context(), request.toDomain())
+	order, err := request.toDomain()
+
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"message": "Could not create order."})
+		return
+	}
+
+	order, err = h.orders.CreateOrder(context.Request.Context(), order)
+
 	if err != nil {
 		context.JSON(http.StatusInternalServerError, gin.H{"message": "Could not create order."})
 		return

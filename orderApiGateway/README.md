@@ -39,7 +39,7 @@ The platform combines Event-Driven Architecture (EDA) with Domain-Driven Design 
                            v
 +---------------------------------------------------------------------------------------+
 |                               Apache Kafka Event Bus                                  |
-|   Topics: order.created | order.paid | order.cancelled | inventory.reserved | ...     |
+|   Topics: order.created | order.paid | order.Cancelled | inventory.reserved | ...     |
 +---------------------------------------------------------------------------------------+
          |                                         |
          v                                         v
@@ -92,7 +92,7 @@ The order lifecycle is a finite state machine enforced at the Aggregate Root lev
      |                                             |
      | (Stock Unavailable)                         | (Payment Success)
      v                                             v
-[ CANCELLED ]                                  [ PAID ]
+[ Cancelled ]                                  [ PAID ]
                                                    |
                                                    v
                                      [ FULFILLMENT_IN_PROGRESS ]
@@ -186,7 +186,7 @@ If the Payment Service fails during an active transaction:
 2. The Order Service catches the event and updates the status to `CANCEL_PENDING`.
 3. The Order Service emits `inventory.release_reservation`.
 4. The Inventory Service releases reserved stock and responds with `inventory.released`.
-5. The Order Service updates the status to `CANCELLED`.
+5. The Order Service updates the status to `Cancelled`.
 
 ## API Documentation
 

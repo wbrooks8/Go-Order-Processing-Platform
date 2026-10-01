@@ -1,3 +1,7 @@
+// Implements the repository interface using GORM and PostgreSQL. Creates,
+// loads, and updates order records, prepares tables, and converts between
+// database models and domain orders. Cancellation decisions belong to the domain.
+
 package postgres
 
 import (
@@ -47,38 +51,21 @@ func (r *Repository) GetOrderByID(ctx context.Context, id string) (*domain.Order
 	return order, nil
 }
 
-func (r *Repository) CancelOrder(ctx context.Context, id string) (*domain.Order, error) {
-	var model OrderModel
-
-	err := r.db.WithContext(ctx).Preload("Items").First(&model, "id = ?", id).Error
-
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, domain.ErrOrderNotFound
-		}
-		return nil, err
+// UpdateOrder updates order fields; order items are left unchanged.
+func (r *Repository) UpdateOrder(ctx context.Context, order *domain.Order) error {
+	model := orderToModel(order)
+	// Explicit fields include zero values and avoid creating a missing order.
+	result := r.db.WithContext(ctx).Model(&OrderModel{}).
+		Where("id = ?", order.ID).
+		Select("CustomerID", "Status", "TotalAmount", "Currency", "Version", "ShippingAddress", "BillingAddress").
+		Updates(&model)
+	if result.Error != nil {
+		return result.Error
 	}
-
-	order := &domain.Order{}
-	orderFromModel(order, model)
-
-	if order.Status == "Accepted" {
-		order.Status = "CANCELLED"
-
-		model = orderToModel(order)
-
-		if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return tx.Save(&model).Error
-		}); err != nil {
-			return nil, err
-		}
-
-		return order, nil
-	} else if order.Status == "CANCELLED" {
-		return order, nil
-	} else {
-		return nil, domain.ErrOrderCannotBeCancelled
+	if result.RowsAffected == 0 {
+		return domain.ErrOrderNotFound
 	}
+	return nil
 }
 
 func orderToModel(order *domain.Order) OrderModel {
