@@ -9,3 +9,4 @@ import "errors"
 var ErrOrderNotFound = errors.New("order not found")
 var ErrOrderCannotBeCancelled = errors.New("order cannot be cancelled in its current state")
 var ErrInvalidOrder = errors.New("order is invalid")
+var ErrInvalidUUID = errors.New("UUID is invalid")

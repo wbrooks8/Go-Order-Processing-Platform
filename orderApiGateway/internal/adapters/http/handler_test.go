@@ -19,6 +19,9 @@ import (
 )
 
 type fakeOrderRepository struct {
+	getCalls     int
+	updateCalls  int
+	createCalls  int
 	createdOrder *domain.Order
 	createErr    error
 	getOrder     *domain.Order
@@ -27,6 +30,7 @@ type fakeOrderRepository struct {
 }
 
 func (fake *fakeOrderRepository) CreateOrder(_ context.Context, order *domain.Order) error {
+	fake.createCalls++
 	fake.createdOrder = order
 	if fake.createErr == nil {
 		order.ID = "44f551b5-0c28-4132-bcd4-d09b048dfe61"
@@ -35,10 +39,12 @@ func (fake *fakeOrderRepository) CreateOrder(_ context.Context, order *domain.Or
 }
 
 func (fake *fakeOrderRepository) GetOrderByID(_ context.Context, _ string) (*domain.Order, error) {
+	fake.getCalls++
 	return fake.getOrder, fake.getErr
 }
 
 func (fake *fakeOrderRepository) UpdateOrder(_ context.Context, _ *domain.Order) error {
+	fake.updateCalls++
 	return fake.updateErr
 }
 
@@ -82,6 +88,13 @@ func TestCreateOrderRejectsInvalidRequests(t *testing.T) {
 		name   string
 		change func(*CreateOrderRequest)
 	}{
+		{"malformed customer UUID", func(r *CreateOrderRequest) { r.CustomerID = "banana" }},
+		{"malformed product UUID", func(r *CreateOrderRequest) { r.Items[0].ProductID = "banana" }},
+		{"malformed second product UUID", func(r *CreateOrderRequest) {
+			item := r.Items[0]
+			item.ProductID = "banana"
+			r.Items = append(r.Items, item)
+		}},
 		{"missing customer", func(r *CreateOrderRequest) { r.CustomerID = "" }},
 		{"nil items", func(r *CreateOrderRequest) { r.Items = nil }},
 		{"empty items", func(r *CreateOrderRequest) { r.Items = []CreateOrderItemRequest{} }},
@@ -124,7 +137,7 @@ func assertCreateRejected(t *testing.T, body string) {
 	if response.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400; body: %s", response.Code, response.Body.String())
 	}
-	if repository.createdOrder != nil {
+	if repository.createCalls != 0 {
 		t.Error("invalid request reached the repository")
 	}
 }
@@ -175,7 +188,7 @@ func TestGetOrderMapsNotFoundAndInternalErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			router := newTestRouter(&fakeOrderRepository{getErr: test.err})
 			response := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodGet, "/api/v1/orders/order-1", nil)
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/orders/44f551b5-0c28-4132-bcd4-d09b048dfe61", nil)
 
 			router.ServeHTTP(response, request)
 
@@ -207,7 +220,7 @@ func TestCancelOrderMapsSuccessNotFoundConflictAndInternalErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			router := newTestRouter(&fakeOrderRepository{getOrder: test.order, getErr: test.err, updateErr: test.updateErr})
 			response := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/orders/order-1/cancel", nil)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/orders/44f551b5-0c28-4132-bcd4-d09b048dfe61/cancel", nil)
 
 			router.ServeHTTP(response, request)
 
@@ -244,5 +257,27 @@ func testOrderWithStatus(status string) *domain.Order {
 		TotalAmount: 1299.99,
 		Currency:    "USD",
 		Version:     1,
+	}
+}
+
+func TestOrderEndpointsRejectInvalidUUIDBeforeRepository(t *testing.T) {
+	for _, endpoint := range []struct{ method, suffix string }{
+		{http.MethodGet, ""}, {http.MethodPost, "/cancel"},
+	} {
+		for _, id := range []string{"banana", "44f551b5-0c28-4132-bcd4-d09b048dfe6z"} {
+			t.Run(endpoint.method+"/"+id, func(t *testing.T) {
+				repository := &fakeOrderRepository{getOrder: testOrder()}
+				router := newTestRouter(repository)
+				response := httptest.NewRecorder()
+				request := httptest.NewRequest(endpoint.method, "/api/v1/orders/"+id+endpoint.suffix, nil)
+				router.ServeHTTP(response, request)
+				if response.Code != http.StatusBadRequest {
+					t.Errorf("status = %d, want 400; body: %s", response.Code, response.Body.String())
+				}
+				if repository.getCalls != 0 || repository.updateCalls != 0 {
+					t.Error("invalid ID reached repository")
+				}
+			})
+		}
 	}
 }

@@ -1,6 +1,9 @@
 package http
 
-import "github.com/wbrooks8/go_order_api_gateway/internal/domain"
+import (
+	"github.com/wbrooks8/go_order_api_gateway/internal/domain"
+	"github.com/wbrooks8/go_order_api_gateway/internal/service"
+)
 
 type CreateOrderRequest struct {
 	CustomerID      string                   `json:"customerId" binding:"required"`
@@ -46,8 +49,16 @@ type OrderItemResponse struct {
 }
 
 func (request CreateOrderRequest) toDomain() (*domain.Order, error) {
+	err := service.IsValidUUID(request.CustomerID)
+	if err != nil {
+		return nil, domain.ErrInvalidUUID
+	}
 	items := make([]domain.OrderItem, 0, len(request.Items))
 	for _, item := range request.Items {
+		err := service.IsValidUUID(item.ProductID)
+		if err != nil {
+			return nil, domain.ErrInvalidUUID
+		}
 		items = append(items, domain.OrderItem{
 			ProductID: item.ProductID,
 			SKU:       item.SKU,

@@ -22,6 +22,7 @@ func NewHandler(orders *service.OrderUseCase) *Handler {
 
 func (h *Handler) createOrder(context *gin.Context) {
 	var request CreateOrderRequest
+
 	if err := context.ShouldBindJSON(&request); err != nil {
 		context.JSON(http.StatusBadRequest, gin.H{"message": "Could not parse request data."})
 		return
@@ -29,6 +30,10 @@ func (h *Handler) createOrder(context *gin.Context) {
 
 	order, err := request.toDomain()
 
+	if err == domain.ErrInvalidUUID {
+		context.JSON(http.StatusBadRequest, gin.H{"message": "Invalid UUID."})
+		return
+	}
 	if err != nil {
 		context.JSON(http.StatusBadRequest, gin.H{"message": "Could not create order."})
 		return
@@ -52,6 +57,10 @@ func (h *Handler) getOrder(context *gin.Context) {
 		context.JSON(http.StatusNotFound, gin.H{"message": "Order not found."})
 		return
 	}
+	if errors.Is(err, domain.ErrInvalidUUID) {
+		context.JSON(http.StatusBadRequest, gin.H{"message": "UUID is invalid"})
+		return
+	}
 	if err != nil {
 		context.JSON(http.StatusInternalServerError, gin.H{"message": "Could not retrieve order."})
 		return
@@ -68,7 +77,10 @@ func (h *Handler) cancelOrder(context *gin.Context) {
 		context.JSON(http.StatusNotFound, gin.H{"message": "Order not found."})
 		return
 	}
-
+	if errors.Is(err, domain.ErrInvalidUUID) {
+		context.JSON(http.StatusBadRequest, gin.H{"message": "UUID is invalid"})
+		return
+	}
 	if errors.Is(err, domain.ErrOrderCannotBeCancelled) {
 		context.JSON(http.StatusConflict, gin.H{"message": "Order cannot be cancelled in its current state."})
 		return
