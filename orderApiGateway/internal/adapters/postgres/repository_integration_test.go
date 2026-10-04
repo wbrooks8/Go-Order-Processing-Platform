@@ -127,7 +127,7 @@ func integrationOrder(status string, t *testing.T) *domain.Order {
 			ProductID: "a1b2c3d4-e5f6-7a8b-9c0d-112233445566",
 			SKU:       "SKU-INTEGRATION",
 			Quantity:  2,
-			UnitPrice: 12.50,
+			UnitPrice: 125000,
 		}},
 		domain.Address{Street: "1 Test Street", City: "Austin", State: "TX", PostalCode: "78701", Country: "USA"},
 		domain.Address{Street: "2 Test Street", City: "Austin", State: "TX", PostalCode: "78702", Country: "USA"},
@@ -138,4 +138,49 @@ func integrationOrder(status string, t *testing.T) *domain.Order {
 	}
 	order.Status = status
 	return order
+}
+
+func TestRepositoryIntegrationRejectsStaleUpdate(t *testing.T) {
+	repository, db := newIntegrationRepository(t)
+	ctx := context.Background()
+	order := integrationOrder("Accepted", t)
+	// Verify exact fractional amounts survive the real SQL driver too.
+	order.Items[0].UnitPrice = 1001
+	order.TotalAmount = 2002
+	if err := repository.CreateOrder(ctx, order); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Where("id = ?", order.ID).Delete(&OrderModel{}) })
+	first, err := repository.GetOrderByID(ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repository.GetOrderByID(ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.TotalAmount != 2002 || first.Items[0].UnitPrice != 1001 {
+		t.Fatal("SQL changed exact amounts")
+	}
+	first.Status = "Paid"
+	if err := repository.UpdateOrder(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Version != 2 {
+		t.Fatalf("version = %d, want 2", first.Version)
+	}
+	second.Status = "Cancelled"
+	if err := repository.UpdateOrder(ctx, second); !errors.Is(err, domain.ErrOrderConflict) {
+		t.Fatalf("stale update: %v", err)
+	}
+	if second.Version != 1 {
+		t.Fatal("failed update changed in-memory version")
+	}
+	persisted, err := repository.GetOrderByID(ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != "Paid" || persisted.Version != 2 {
+		t.Fatal("stale writer overwrote order")
+	}
 }

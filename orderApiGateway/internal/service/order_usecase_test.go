@@ -142,7 +142,7 @@ func TestCancelOrder(t *testing.T) {
 
 func validServiceOrder(t *testing.T) *domain.Order {
 	t.Helper()
-	order, err := domain.NewOrder("customer-1", []domain.OrderItem{{ProductID: "product-1", Quantity: 1, UnitPrice: 10}}, domain.Address{}, domain.Address{})
+	order, err := domain.NewOrder("d8f3b2a1-0000-4a8a-8e2b-123456789abc", []domain.OrderItem{{ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445566", Quantity: 1, UnitPrice: 100000}}, domain.Address{}, domain.Address{})
 	if err != nil {
 		t.Fatalf("create test order: %v", err)
 	}
@@ -185,5 +185,30 @@ func TestOrderOperationsRejectInvalidUUID(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCreateOrderRejectsInvalidDataFromNonHTTPCallers(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*domain.Order)
+		want   error
+	}{
+		{"customer UUID", func(o *domain.Order) { o.CustomerID = "banana" }, domain.ErrInvalidUUID},
+		{"product UUID", func(o *domain.Order) { o.Items[0].ProductID = "banana" }, domain.ErrInvalidUUID},
+		{"total", func(o *domain.Order) { o.TotalAmount++ }, domain.ErrInvalidOrder},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			order := validServiceOrder(t)
+			test.change(order)
+			repository := &fakeOrderRepository{}
+			_, err := NewOrderUseCase(repository).CreateOrder(context.Background(), order)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if repository.createdOrder != nil {
+				t.Fatal("invalid order reached storage")
+			}
+		})
 	}
 }

@@ -1,10 +1,15 @@
-// Starts the application: connects to PostgreSQL, prepares the tables, and
-// connects the repository, service, and HTTP handlers before starting the server.
-
+// Wires the API and database, then drains HTTP requests on Ctrl+C before closing SQL.
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	httpadapter "github.com/wbrooks8/go_order_api_gateway/internal/adapters/http"
@@ -14,22 +19,41 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+}
+
+func run() (err error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	db, err := config.Connect()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer config.Close(db)
-
-	orderRepository := postgresadapter.NewRepository(db)
-	if err := orderRepository.Migrate(); err != nil {
-		log.Fatal(err)
+	defer func() { err = errors.Join(err, config.Close(db)) }()
+	repository := postgresadapter.NewRepository(db)
+	if err := repository.Migrate(); err != nil {
+		return err
 	}
-
-	orderService := service.NewOrderUseCase(orderRepository)
-	server := gin.Default()
-	httpadapter.RegisterRoutes(server, httpadapter.NewHandler(orderService))
-
-	if err := server.Run(":8080"); err != nil {
-		log.Fatal(err)
+	router := gin.Default()
+	httpadapter.RegisterRoutes(router, httpadapter.NewHandler(service.NewOrderUseCase(repository)))
+	server := &http.Server{Addr: ":8080", Handler: router, ReadHeaderTimeout: 5 * time.Second}
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	select {
+	case err := <-done:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return errors.Join(err, server.Close())
+		}
+		return nil
 	}
 }

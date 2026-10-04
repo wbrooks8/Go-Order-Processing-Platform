@@ -54,17 +54,26 @@ func (r *Repository) GetOrderByID(ctx context.Context, id string) (*domain.Order
 // UpdateOrder updates order fields; order items are left unchanged.
 func (r *Repository) UpdateOrder(ctx context.Context, order *domain.Order) error {
 	model := orderToModel(order)
+	model.Version = order.Version + 1
 	// Explicit fields include zero values and avoid creating a missing order.
 	result := r.db.WithContext(ctx).Model(&OrderModel{}).
-		Where("id = ?", order.ID).
+		Where("id = ? AND version = ?", order.ID, order.Version).
 		Select("CustomerID", "Status", "TotalAmount", "Currency", "Version", "ShippingAddress", "BillingAddress").
 		Updates(&model)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domain.ErrOrderNotFound
+		var count int64
+		if err := r.db.WithContext(ctx).Model(&OrderModel{}).Where("id = ?", order.ID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return domain.ErrOrderNotFound
+		}
+		return domain.ErrOrderConflict
 	}
+	order.Version = model.Version
 	return nil
 }
 

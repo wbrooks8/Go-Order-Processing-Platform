@@ -244,7 +244,7 @@ func testOrder() *domain.Order {
 		ProductID: "a1b2c3d4-e5f6-7a8b-9c0d-112233445566",
 		SKU:       "PROD-LPT-001",
 		Quantity:  1,
-		UnitPrice: 1299.99,
+		UnitPrice: 12999900,
 	}}
 	return order
 }
@@ -254,7 +254,7 @@ func testOrderWithStatus(status string) *domain.Order {
 		ID:          "44f551b5-0c28-4132-bcd4-d09b048dfe61",
 		CustomerID:  "d8f3b2a1-0000-4a8a-8e2b-123456789abc",
 		Status:      status,
-		TotalAmount: 1299.99,
+		TotalAmount: 12999900,
 		Currency:    "USD",
 		Version:     1,
 	}
@@ -279,5 +279,19 @@ func TestOrderEndpointsRejectInvalidUUIDBeforeRepository(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCreateOrderRejectsExcessPricePrecision(t *testing.T) {
+	assertCreateRejected(t, strings.Replace(validCreateOrderJSON, "1299.99", "0.00001", 1))
+	assertCreateRejected(t, strings.Replace(validCreateOrderJSON, "1299.99", "100000000", 1))
+}
+
+func TestCancelOrderReturnsConflictForStaleUpdate(t *testing.T) {
+	router := newTestRouter(&fakeOrderRepository{getOrder: testOrder(), updateErr: domain.ErrOrderConflict})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/orders/44f551b5-0c28-4132-bcd4-d09b048dfe61/cancel", nil))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", response.Code)
 	}
 }

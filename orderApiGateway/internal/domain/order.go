@@ -3,6 +3,8 @@
 
 package domain
 
+import "github.com/google/uuid"
+
 type Address struct {
 	Street     string
 	City       string
@@ -17,14 +19,14 @@ type OrderItem struct {
 	ProductID string
 	SKU       string
 	Quantity  int
-	UnitPrice float64
+	UnitPrice Money
 }
 
 type Order struct {
 	ID              string
 	CustomerID      string
 	Status          string
-	TotalAmount     float64
+	TotalAmount     Money
 	Currency        string
 	Version         int
 	ShippingAddress Address
@@ -43,13 +45,11 @@ func NewOrder(customerID string, items []OrderItem, shippingAddress, billingAddr
 		Items:           items,
 	}
 
-	if err := order.IsValidOrder(); err != nil {
-		return nil, ErrInvalidOrder
+	total, err := order.calculatedTotal()
+	if err != nil {
+		return nil, err
 	}
-
-	for index := range order.Items {
-		order.TotalAmount += float64(order.Items[index].Quantity) * order.Items[index].UnitPrice
-	}
+	order.TotalAmount = total
 
 	return order, nil
 }
@@ -66,16 +66,45 @@ func (order *Order) Cancel() error {
 	}
 }
 
-func (order *Order) IsValidOrder() error {
-	if order.CustomerID == "" || len(order.Items) < 1 {
+// Validate is shared by constructors and services, including non-HTTP callers.
+func (order *Order) Validate() error {
+	total, err := order.calculatedTotal()
+	if err != nil {
+		return err
+	}
+	if order.TotalAmount != total || order.Currency != "USD" {
 		return ErrInvalidOrder
 	}
-
-	for _, item := range order.Items {
-		if item.ProductID == "" || item.Quantity <= 0 || item.UnitPrice <= 0.0 {
-			return ErrInvalidOrder
-		}
-	}
-
 	return nil
+}
+
+func ValidateUUID(id string) error {
+	if uuid.Validate(id) != nil {
+		return ErrInvalidUUID
+	}
+	return nil
+}
+
+func (order *Order) calculatedTotal() (Money, error) {
+	if order == nil || order.CustomerID == "" || len(order.Items) == 0 {
+		return 0, ErrInvalidOrder
+	}
+	if err := ValidateUUID(order.CustomerID); err != nil {
+		return 0, err
+	}
+	var total Money
+	for _, item := range order.Items {
+		if item.ProductID == "" || item.Quantity <= 0 || item.UnitPrice <= 0 {
+			return 0, ErrInvalidOrder
+		}
+		if err := ValidateUUID(item.ProductID); err != nil {
+			return 0, err
+		}
+		// Check before multiplying so large quantities cannot overflow.
+		if item.UnitPrice > MaxMoney || int64(item.Quantity) > int64((MaxMoney-total)/item.UnitPrice) {
+			return 0, ErrInvalidOrder
+		}
+		total += Money(item.Quantity) * item.UnitPrice
+	}
+	return total, nil
 }

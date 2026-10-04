@@ -15,7 +15,7 @@ func TestOrderModelConversionRoundTrip(t *testing.T) {
 		ID:          "44f551b5-0c28-4132-bcd4-d09b048dfe61",
 		CustomerID:  "d8f3b2a1-0000-4a8a-8e2b-123456789abc",
 		Status:      "Accepted",
-		TotalAmount: 1299.99,
+		TotalAmount: 12999900,
 		Currency:    "USD",
 		Version:     1,
 		ShippingAddress: domain.Address{
@@ -27,7 +27,7 @@ func TestOrderModelConversionRoundTrip(t *testing.T) {
 		Items: []domain.OrderItem{{
 			ID: 2, OrderID: "44f551b5-0c28-4132-bcd4-d09b048dfe61",
 			ProductID: "a1b2c3d4-e5f6-7a8b-9c0d-112233445566", SKU: "PROD-LPT-001",
-			Quantity: 1, UnitPrice: 1299.99,
+			Quantity: 1, UnitPrice: 12999900,
 		}},
 	}
 
@@ -42,12 +42,12 @@ func TestOrderModelConversionRoundTrip(t *testing.T) {
 
 func TestOrderFromModelCopiesAllFields(t *testing.T) {
 	model := OrderModel{
-		ID: "order-1", CustomerID: "customer-1", Status: "Cancelled", TotalAmount: 42.5,
+		ID: "order-1", CustomerID: "d8f3b2a1-0000-4a8a-8e2b-123456789abc", Status: "Cancelled", TotalAmount: 425000,
 		Currency: "USD", Version: 2,
 		ShippingAddress: domain.Address{Street: "1 First St", City: "Austin", State: "TX", PostalCode: "78701", Country: "USA"},
 		BillingAddress:  domain.Address{Street: "2 Second St", City: "Austin", State: "TX", PostalCode: "78702", Country: "USA"},
 		Items: []OrderItemModel{{
-			ID: 4, OrderID: "order-1", ProductID: "product-1", SKU: "SKU-1", Quantity: 2, UnitPrice: 21.25,
+			ID: 4, OrderID: "order-1", ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445566", SKU: "SKU-1", Quantity: 2, UnitPrice: 212500,
 		}},
 	}
 	order := &domain.Order{}

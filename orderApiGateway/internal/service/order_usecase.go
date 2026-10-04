@@ -7,7 +7,6 @@ package service
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/wbrooks8/go_order_api_gateway/internal/domain"
 	"github.com/wbrooks8/go_order_api_gateway/internal/ports"
 )
@@ -21,7 +20,7 @@ func NewOrderUseCase(orders ports.OrderRepository) *OrderUseCase {
 }
 
 func (u *OrderUseCase) CreateOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
-	if err := order.IsValidOrder(); err != nil {
+	if err := order.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -33,7 +32,7 @@ func (u *OrderUseCase) CreateOrder(ctx context.Context, order *domain.Order) (*d
 }
 
 func (u *OrderUseCase) GetOrderByID(ctx context.Context, id string) (*domain.Order, error) {
-	err := IsValidUUID(id)
+	err := domain.ValidateUUID(id)
 
 	if err != nil {
 		return nil, err
@@ -49,7 +48,7 @@ func (u *OrderUseCase) GetOrderByID(ctx context.Context, id string) (*domain.Ord
 }
 
 func (u *OrderUseCase) CancelOrder(ctx context.Context, id string) (*domain.Order, error) {
-	err := IsValidUUID(id)
+	err := domain.ValidateUUID(id)
 
 	if err != nil {
 		return nil, err
@@ -67,12 +66,4 @@ func (u *OrderUseCase) CancelOrder(ctx context.Context, id string) (*domain.Orde
 		return nil, err
 	}
 	return order, nil
-}
-
-func IsValidUUID(s string) error {
-	if uuid.Validate(s) != nil {
-		return domain.ErrInvalidUUID
-	}
-
-	return nil
 }

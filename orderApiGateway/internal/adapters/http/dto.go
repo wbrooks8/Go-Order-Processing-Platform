@@ -1,8 +1,9 @@
+// Defines API JSON shapes and converts them to and from domain orders.
+// The domain validates business data; Gin checks request structure.
 package http
 
 import (
 	"github.com/wbrooks8/go_order_api_gateway/internal/domain"
-	"github.com/wbrooks8/go_order_api_gateway/internal/service"
 )
 
 type CreateOrderRequest struct {
@@ -13,10 +14,10 @@ type CreateOrderRequest struct {
 }
 
 type CreateOrderItemRequest struct {
-	ProductID string  `json:"productId" binding:"required"`
-	SKU       string  `json:"sku" binding:"required"`
-	Quantity  int     `json:"quantity" binding:"required,gt=0"`
-	UnitPrice float64 `json:"unitPrice" binding:"required,gt=0"`
+	ProductID string       `json:"productId" binding:"required"`
+	SKU       string       `json:"sku" binding:"required"`
+	Quantity  int          `json:"quantity" binding:"required,gt=0"`
+	UnitPrice domain.Money `json:"unitPrice" binding:"required,gt=0"`
 }
 
 type AddressRequest struct {
@@ -31,7 +32,7 @@ type OrderResponse struct {
 	ID              string              `json:"orderId"`
 	CustomerID      string              `json:"customerId"`
 	Status          string              `json:"status"`
-	TotalAmount     float64             `json:"totalAmount"`
+	TotalAmount     domain.Money        `json:"totalAmount"`
 	Currency        string              `json:"currency"`
 	Version         int                 `json:"version"`
 	ShippingAddress AddressRequest      `json:"shippingAddress"`
@@ -40,25 +41,17 @@ type OrderResponse struct {
 }
 
 type OrderItemResponse struct {
-	ID        uint    `json:"id"`
-	OrderID   string  `json:"orderId"`
-	ProductID string  `json:"productId"`
-	SKU       string  `json:"sku"`
-	Quantity  int     `json:"quantity"`
-	UnitPrice float64 `json:"unitPrice"`
+	ID        uint         `json:"id"`
+	OrderID   string       `json:"orderId"`
+	ProductID string       `json:"productId"`
+	SKU       string       `json:"sku"`
+	Quantity  int          `json:"quantity"`
+	UnitPrice domain.Money `json:"unitPrice"`
 }
 
 func (request CreateOrderRequest) toDomain() (*domain.Order, error) {
-	err := service.IsValidUUID(request.CustomerID)
-	if err != nil {
-		return nil, domain.ErrInvalidUUID
-	}
 	items := make([]domain.OrderItem, 0, len(request.Items))
 	for _, item := range request.Items {
-		err := service.IsValidUUID(item.ProductID)
-		if err != nil {
-			return nil, domain.ErrInvalidUUID
-		}
 		items = append(items, domain.OrderItem{
 			ProductID: item.ProductID,
 			SKU:       item.SKU,

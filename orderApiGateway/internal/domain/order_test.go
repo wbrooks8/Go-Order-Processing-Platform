@@ -5,25 +5,24 @@ package domain
 
 import (
 	"errors"
-	"math"
 	"testing"
 )
 
 func TestNewOrderInitializesOrderAndCalculatesTotal(t *testing.T) {
 	items := []OrderItem{
-		{ProductID: "product-1", SKU: "SKU-1", Quantity: 2, UnitPrice: 12.50},
-		{ProductID: "product-2", SKU: "SKU-2", Quantity: 1, UnitPrice: 3.25},
+		{ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445566", SKU: "SKU-1", Quantity: 2, UnitPrice: 125000},
+		{ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445567", SKU: "SKU-2", Quantity: 1, UnitPrice: 32500},
 	}
 	shipping := Address{Street: "1 Main St", City: "Austin", State: "TX", PostalCode: "78701", Country: "USA"}
 	billing := Address{Street: "2 Main St", City: "Austin", State: "TX", PostalCode: "78702", Country: "USA"}
 
-	order, err := NewOrder("customer-1", items, shipping, billing)
+	order, err := NewOrder("d8f3b2a1-0000-4a8a-8e2b-123456789abc", items, shipping, billing)
 
 	if err != nil {
 		t.Fatalf("Test failed with error %v", err)
 	}
-	if order.CustomerID != "customer-1" {
-		t.Errorf("CustomerID = %q, want customer-1", order.CustomerID)
+	if order.CustomerID != "d8f3b2a1-0000-4a8a-8e2b-123456789abc" {
+		t.Errorf("CustomerID = %q, want valid customer UUID", order.CustomerID)
 	}
 	if order.Status != "Accepted" {
 		t.Errorf("Status = %q, want Accepted", order.Status)
@@ -34,8 +33,8 @@ func TestNewOrderInitializesOrderAndCalculatesTotal(t *testing.T) {
 	if order.Version != 1 {
 		t.Errorf("Version = %d, want 1", order.Version)
 	}
-	if math.Abs(order.TotalAmount-28.25) > 1e-9 {
-		t.Errorf("TotalAmount = %f, want 28.25", order.TotalAmount)
+	if order.TotalAmount != 282500 {
+		t.Errorf("TotalAmount = %v, want 28.25", order.TotalAmount)
 	}
 	if len(order.Items) != len(items) {
 		t.Fatalf("got %d items, want %d", len(order.Items), len(items))
@@ -63,13 +62,13 @@ func TestNewOrderRejectsInvalidInput(t *testing.T) {
 		{"zero price", func(customer *string, items *[]OrderItem) { (*items)[0].UnitPrice = 0 }},
 		{"negative price", func(customer *string, items *[]OrderItem) { (*items)[0].UnitPrice = -1 }},
 		{"invalid second item", func(customer *string, items *[]OrderItem) {
-			*items = append(*items, OrderItem{ProductID: "product-2", Quantity: 0, UnitPrice: 5})
+			*items = append(*items, OrderItem{ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445567", Quantity: 0, UnitPrice: 50000})
 		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			customer := "customer-1"
-			items := []OrderItem{{ProductID: "product-1", Quantity: 2, UnitPrice: 12.50}}
+			customer := "d8f3b2a1-0000-4a8a-8e2b-123456789abc"
+			items := []OrderItem{{ProductID: "a1b2c3d4-e5f6-4a8b-9c0d-112233445566", Quantity: 2, UnitPrice: 125000}}
 			test.change(&customer, &items)
 			order, err := NewOrder(customer, items, Address{}, Address{})
 			if !errors.Is(err, ErrInvalidOrder) {
