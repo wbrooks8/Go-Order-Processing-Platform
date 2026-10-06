@@ -30,3 +30,11 @@ type OrderItemModel struct {
 }
 
 func (OrderItemModel) TableName() string { return "order_items" }
+
+type OutBoxRow struct {
+	EventID      string `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	EventPayload string `gorm:"type:jsonb;not null"`
+	EventSent    bool   `gorm:"not null;default:false"`
+}
+
+func (OutBoxRow) TableName() string { return "outbox_events" }

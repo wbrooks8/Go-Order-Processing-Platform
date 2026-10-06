@@ -16,6 +16,7 @@ import (
 	postgresadapter "github.com/wbrooks8/go_order_api_gateway/internal/adapters/postgres"
 	"github.com/wbrooks8/go_order_api_gateway/internal/config"
 	"github.com/wbrooks8/go_order_api_gateway/internal/service"
+	"github.com/wbrooks8/go_order_api_gateway/kafka/producer"
 )
 
 func main() {
@@ -37,8 +38,17 @@ func run() (err error) {
 	if err := repository.Migrate(); err != nil {
 		return err
 	}
+
+	kafkaPublisher := producer.NewPublisher()
+	defer func() {
+		if closeErr := kafkaPublisher.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+
 	router := gin.Default()
-	httpadapter.RegisterRoutes(router, httpadapter.NewHandler(service.NewOrderUseCase(repository)))
+	useCase := service.NewOrderUseCase(repository, kafkaPublisher)
+	httpadapter.RegisterRoutes(router, httpadapter.NewHandler(useCase))
 	server := &http.Server{Addr: ":8080", Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()

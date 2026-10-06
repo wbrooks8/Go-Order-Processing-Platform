@@ -25,6 +25,7 @@ func RunProducer(ctx context.Context) (err error) {
 		MaxAttempts:  3,
 		WriteTimeout: 10 * time.Second,
 	}
+
 	defer func() { err = errors.Join(err, w.Close()) }()
 
 	// Each loop iteration creates one independent Kafka record. Kafka keeps

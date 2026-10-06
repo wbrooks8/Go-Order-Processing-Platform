@@ -6,9 +6,11 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/wbrooks8/go_order_api_gateway/internal/domain"
+	"github.com/wbrooks8/go_order_api_gateway/kafka/events"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +25,26 @@ func NewRepository(db *gorm.DB) *Repository {
 func (r *Repository) CreateOrder(ctx context.Context, order *domain.Order) error {
 	model := orderToModel(order)
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Create(&model).Error
+		if err := tx.Create(&model).Error; err != nil {
+			return err
+		}
+		event := events.OrderCreatedEvent{
+			OrderID:    model.ID,
+			CustomerID: model.CustomerID,
+		}
+
+		payload, err := json.Marshal(event)
+
+		if err != nil {
+			return err
+		}
+
+		outbox := OutBoxRow{
+			EventPayload: string(payload),
+		}
+
+		return tx.Create(&outbox).Error
+
 	}); err != nil {
 		return err
 	}
@@ -33,7 +54,7 @@ func (r *Repository) CreateOrder(ctx context.Context, order *domain.Order) error
 }
 
 func (r *Repository) Migrate() error {
-	return r.db.AutoMigrate(&OrderModel{}, &OrderItemModel{})
+	return r.db.AutoMigrate(&OrderModel{}, &OrderItemModel{}, &OutBoxRow{})
 }
 
 func (r *Repository) GetOrderByID(ctx context.Context, id string) (*domain.Order, error) {
